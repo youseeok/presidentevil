@@ -14,6 +14,16 @@ async function post(request,env){
   await env.SCORES.put('top',JSON.stringify(l));
   return json({rank,scores:l.slice(0,50)});
 }
+async function getStats(env){const s=JSON.parse((await env.SCORES.get('stats'))||'{}');return{visits:s.visits||0,plays:s.plays||0}}
+// Hitungan pengunjung (1x per perangkat, dan 1x per IP per jam) dan jumlah permainan (1x per IP per menit)
+async function hit(request,env){
+  let b={};try{b=await request.json()}catch{}
+  const t=b.t==='visit'?'visits':b.t==='play'?'plays':null;if(!t)return json({error:'bad'},400);
+  const rk=(t==='visits'?'rv:':'rp:')+(request.headers.get('CF-Connecting-IP')||'x');
+  const st=await getStats(env);
+  if(!(await env.SCORES.get(rk))){try{await env.SCORES.put(rk,'1',{expirationTtl:t==='visits'?3600:60});st[t]++;await env.SCORES.put('stats',JSON.stringify(st))}catch{}}
+  return json(st);
+}
 export default{
   async fetch(request,env){
     const url=new URL(request.url);
@@ -22,6 +32,8 @@ export default{
       if(request.method==='POST')return post(request,env);
       return json({error:'method'},405);
     }
+    if(url.pathname==='/api/stats'&&request.method==='GET')return json(await getStats(env));
+    if(url.pathname==='/api/hit'&&request.method==='POST')return hit(request,env);
     return env.ASSETS.fetch(request);
   }
 };
